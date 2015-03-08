@@ -451,11 +451,64 @@ vtheta = np.arctan2(velocity[:,1],norm(velocity[:,[0,2]]) )
 
 vuv = np.zeros((numPixels,2))
 
-vuv[:,0] = np.mod(vphi+4.5,2*np.pi)/(2*np.pi)
-vuv[:,1] = (vtheta+np.pi/2)/(np.pi)
+
+
 
 if SKY_TEXTURE == 'texture':
+    vuv[:,0] = np.mod(vphi+4.5,2*np.pi)/(2*np.pi)
+    vuv[:,1] = (vtheta+np.pi/2)/(np.pi)
+
     col_sky = lookup(texarr_sky,vuv)[:,0:3] 
+
+elif SKY_TEXTURE == 'starfield':
+    STFRES=4096
+
+    print "--generating random stars..."
+    sys.stdout.flush()
+
+    stars_raw = np.divide(np.random.random_integers(0,high=50,size=(STFRES,STFRES)),49)
+
+
+    print "--generating temperature and intensity fields..."
+    sys.stdout.flush()
+
+    stars_tmpcol = bb.colour(np.exp(np.random.uniform(8,9.,size=(STFRES*STFRES)))).reshape((STFRES,STFRES,3))
+
+    stars_raw = np.einsum('ij,ijk->ijk',stars_raw,stars_tmpcol)
+
+    stars_intensity = np.exp(np.random.uniform(-6.,2., size=(STFRES,STFRES)))
+
+
+    stars_raw = np.einsum('ijk,ij->ijk',stars_raw,stars_intensity)
+
+
+
+    print "--lookup of distorted starfield..."
+    sys.stdout.flush()
+
+
+    #transformation necessary for uniform sampling on the sphere
+    
+    vuv[:,0] = np.mod(vphi+np.pi,2*np.pi)/(2*np.pi)
+    #vuv[:,1] = 0.5*(np.cos(vtheta) + 1.)
+    vuv[:,1] = (theta +np.pi/2)/(2*np.pi)
+
+    print vuv
+    
+    col_stars = lookup(stars_raw,vuv,bytefloat=False)
+
+    
+    #blur
+    print "--blurring starfield..."
+    sys.stdout.flush()
+    col_stars = col_stars.reshape((RESOLUTION[1],RESOLUTION[0],3))
+    
+    col_stars = ndim.gaussian_filter(col_stars,1./640.*RESOLUTION[0])
+
+    col_stars = col_stars.reshape((numPixels,3))
+
+    col_sky = col_stars
+
 
 print "- generating debug layers..."
 sys.stdout.flush()
@@ -470,7 +523,7 @@ dbg_grid = np.abs(normalize(velocity)) < 0.1
 dbg_done = np.outer(donemask,np.array([1.,1.,1.]))
 
 
-if SKY_TEXTURE == 'texture':
+if SKY_TEXTURE in ['texture','starfield']:
     col_bg = col_sky
 elif SKY_TEXTURE == 'none':
     col_bg = np.zeros((numPixels,3))
@@ -547,6 +600,8 @@ saveToImgBool(donemask,"tests/objects.png")
 saveToImg(object_colour,"tests/objcolour.png")
 saveToImgBool(object_alpha,"tests/objalpha.png")
 saveToImg(col_bg_and_obj,"tests/preproc.png")
+if SKY_TEXTURE != "none":
+    saveToImg(col_sky,"tests/sky.png")
 if BLURDO:
     saveToImg(hipass,"tests/hipass.png")
 
