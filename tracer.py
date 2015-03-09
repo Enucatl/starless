@@ -466,53 +466,84 @@ if SKY_TEXTURE == 'texture':
     col_sky = lookup(texarr_sky,vuv)[:,0:3] 
 
 elif SKY_TEXTURE == 'starfield':
-    STFRES=4096
+    #STFRES=2048
+    STARNUM = 4000
 
     print "--generating random stars..."
     sys.stdout.flush()
 
-    stars_raw = np.divide(np.random.random_integers(0,high=50,size=(STFRES,STFRES)),49)
+    #stars_raw = np.divide(np.random.random_integers(0,high=50,size=(STFRES,STFRES)),49)
+
+    starlist = np.zeros((STARNUM,3))
+
+    for i in range(3):
+        starlist[:,i] = [1.,1.,1.][i] *  np.random.normal(size=(STARNUM))
 
 
-    print "--generating temperature and intensity fields..."
-    sys.stdout.flush()
+    starlist = normalize(starlist)
 
-    stars_tmpcol = bb.colour(np.exp(np.random.uniform(8,9.,size=(STFRES*STFRES)))).reshape((STFRES,STFRES,3))
+    starlist[:,1] = np.sign(starlist[:,1]) * np.power( starlist[:,1] , 2)
 
-    stars_raw = np.einsum('ij,ijk->ijk',stars_raw,stars_tmpcol)
+    starlist = normalize(starlist)
 
-    stars_intensity = np.exp(np.random.uniform(-6.,2., size=(STFRES,STFRES)))
+    #print "--generating temperature and intensity fields..."
+    #sys.stdout.flush()
+
+    #stars_tmpcol = bb.colour(np.exp(np.random.uniform(8,9.,size=(STFRES*STFRES)))).reshape((STFRES,STFRES,3))
+
+    #stars_raw = np.einsum('ij,ijk->ijk',stars_raw,stars_tmpcol)
+
+    #stars_intensity = np.exp(np.random.uniform(-6.,1., size=(STFRES,STFRES)))
 
 
-    stars_raw = np.einsum('ijk,ij->ijk',stars_raw,stars_intensity)
+    #stars_raw = np.einsum('ijk,ij->ijk',stars_raw,stars_intensity)
 
 
 
     print "--lookup of distorted starfield..."
     sys.stdout.flush()
 
+    normfin = normalize(velocity)
 
-    #transformation necessary for uniform sampling on the sphere
-    
-    vuv[:,0] = np.mod(vphi+np.pi,2*np.pi)/(2*np.pi)
-    #vuv[:,1] = 0.5*(np.cos(vtheta) + 1.)
-    vuv[:,1] = (theta +np.pi/2)/(2*np.pi)
+    col_stars = np.zeros((numPixels,3))
 
-    print vuv
-    
-    col_stars = lookup(stars_raw,vuv,bytefloat=False)
+    DACOS = np.cos(0.005) #np.cos(0.7*TANFOV/float(RESOLUTION[0]))
 
+    for starnum in range(len(starlist)):
+        if starnum%20 == 0:
+            print starnum,
+            sys.stdout.flush()
+            print "\r",
+        star = starlist[starnum,:]
+        products = np.einsum('ik,k->i',normfin,star)
+
+        star_threshold = np.clip( (np.abs(products) - DACOS) / (1. - DACOS) , 0., 1.)
+
+        starintensity = np.exp(np.random.uniform(-6.,1.))
+        starcolor = bb.colour(np.exp(np.random.uniform(8.,9.)))
+
+        col_stars += starintensity * np.outer(
+            star_threshold,
+            starcolor)
+                
+        starnum +=1
     
+    print
+
+    #col_stars = lookup(stars_raw,vuv,bytefloat=False)
+
+
+
     #blur
-    print "--blurring starfield..."
+    print "--convolution..."
     sys.stdout.flush()
-    col_stars = col_stars.reshape((RESOLUTION[1],RESOLUTION[0],3))
-    
-    col_stars = ndim.gaussian_filter(col_stars,1./640.*RESOLUTION[0])
+    col_stars_bl = np.copy(col_stars).reshape((RESOLUTION[1],RESOLUTION[0],3))
+   
+    col_stars_bl = ndim.gaussian_filter(col_stars_bl,1+1./1024.*RESOLUTION[0])
 
-    col_stars = col_stars.reshape((numPixels,3))
+    col_stars_bl = col_stars_bl.reshape((numPixels,3))
 
-    col_sky = col_stars
+    col_sky = col_stars + col_stars_bl
 
 
 print "- generating debug layers..."
