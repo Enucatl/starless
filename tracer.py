@@ -169,6 +169,16 @@ def lookup(texarr,uvarrin): #uvarrin is an array of uv coordinates
 
     return INV255*texarr[  uvarr[:,1], uvarr[:,0] ]
 
+def local_maxima(array2d):
+    #return ((array2d <= np.roll(array2d,  1, 0)) &
+    #        (array2d <= np.roll(array2d, -1, 0)) &
+    #        (array2d <= np.roll(array2d,  1, 1)) &
+    #        (array2d <= np.roll(array2d, -1, 1)))
+
+    maxed = ndim.filters.maximum_filter(array2d,3)
+    maxima = (array2d == maxed)
+    thr = array2d > 0.9
+    return maxima & thr
 
 
 print "Computing rotation matrix..."
@@ -498,11 +508,28 @@ elif SKY_TEXTURE == 'starfield':
     print "--lookup of distorted starfield..."
     sys.stdout.flush()
 
-    normfin = normalize(velocity)
+    nfin = normalize(velocity).reshape((RESOLUTION[1],RESOLUTION[0],3))
 
-    col_stars = np.zeros((numPixels,3))
+   # nfin = ndim.gaussian_filter(nfin,2)
+
+    nfinu = np.roll(nfin,1,axis=0).reshape((numPixels,3))
+    nfinub = np.roll(nfin,-1,axis=0).reshape((numPixels,3))
+    nfinv = np.roll(nfin,1,axis=1).reshape((numPixels,3))
+    nfinvb = np.roll(nfin,-1,axis=1).reshape((numPixels,3))
+
+
+
+    col_stars = np.zeros((RESOLUTION[1],RESOLUTION[0],3))
 
     DACOS = np.cos(0.005) #np.cos(0.7*TANFOV/float(RESOLUTION[0]))
+
+    gradd = np.zeros((RESOLUTION[1],RESOLUTION[0],3))
+    for i in range(3):
+        u,v = np.gradient(nfin[:,:,i])
+        gradd[:,:,i] = u*v
+
+
+    jacc = np.maximum(0.1,np.einsum('ijk,ijk->ij',gradd,gradd))
 
     for starnum in range(len(starlist)):
         if starnum%20 == 0:
@@ -510,36 +537,53 @@ elif SKY_TEXTURE == 'starfield':
             sys.stdout.flush()
             print "\r",
         star = starlist[starnum,:]
-        products = np.einsum('ik,k->i',normfin,star)
+        starv = star[np.newaxis,:]
+        #products = np.einsum('ik,k->i',normfin,star)
 
-        star_threshold = np.clip( (np.abs(products) - DACOS) / (1. - DACOS) , 0., 1.)
+        #star_threshold = np.clip( (np.abs(products) - DACOS) / (1. - DACOS) , 0., 1.)
 
-        starintensity = np.exp(np.random.uniform(-6.,1.))
+
+        #star_threshold_xyz = np.logical_and(
+        #                        np.logical_xor(nfin > starv, nfind > starv),
+        #                        np.logical_xor(nfinx > starv, nfiny > starv)
+        #                        )
+        #star_threshold_xyz = np.logical_and(
+        #                        np.logical_xor(nfin > starv, nfinx > starv),
+        #                        np.logical_xor(nfin > starv, nfiny > starv)
+        #                        )
+
+        starfunc = np.einsum('ijk,k->ij',nfin,star)
+
+        star_threshold = local_maxima(starfunc)
+
+        starintensity = np.exp(np.random.uniform(-6.,0.))
         starcolor = bb.colour(np.exp(np.random.uniform(8.,9.)))
 
-        col_stars += starintensity * np.outer(
-            star_threshold,
-            starcolor)
+        col_stars += starintensity * star_threshold[:,:,np.newaxis] * starcolor[np.newaxis,np.newaxis,:]
                 
         starnum +=1
     
     print
 
+
+    col_stars = col_stars.reshape((numPixels,3))
     #col_stars = lookup(stars_raw,vuv,bytefloat=False)
 
 
+    if False:
+        #blur
+        print "--convolution..."
+        sys.stdout.flush()
+        col_stars_bl = np.copy(col_stars).reshape((RESOLUTION[1],RESOLUTION[0],3))
+       
+        col_stars_bl = ndim.gaussian_filter(col_stars_bl,1+1./1024.*RESOLUTION[0])
 
-    #blur
-    print "--convolution..."
-    sys.stdout.flush()
-    col_stars_bl = np.copy(col_stars).reshape((RESOLUTION[1],RESOLUTION[0],3))
-   
-    col_stars_bl = ndim.gaussian_filter(col_stars_bl,1+1./1024.*RESOLUTION[0])
+        col_stars_bl = col_stars_bl.reshape((numPixels,3))
 
-    col_stars_bl = col_stars_bl.reshape((numPixels,3))
+        col_sky = col_stars + col_stars_bl
 
-    col_sky = col_stars + col_stars_bl
-
+    else:
+        col_sky = col_stars
 
 print "- generating debug layers..."
 sys.stdout.flush()
@@ -633,6 +677,8 @@ saveToImgBool(object_alpha,"tests/objalpha.png")
 saveToImg(col_bg_and_obj,"tests/preproc.png")
 if SKY_TEXTURE != "none":
     saveToImg(col_sky,"tests/sky.png")
+if SKY_TEXTURE == "starfield":
+    saveToImgBool(jacc/1.,"tests/jacobian.png")
 if BLURDO:
     saveToImg(hipass,"tests/hipass.png")
 

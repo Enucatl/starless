@@ -33,7 +33,7 @@ Stepsize=0.02
 Cameraposition=0.,0.,-10.
 
 #Tangent of field of view
-Fieldofview=2.0
+Fieldofview=1.5
 
 #Self explanatory
 #fixes the view vector
