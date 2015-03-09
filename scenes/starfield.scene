@@ -30,10 +30,10 @@ Stepsize=0.02
 
 #Position of the camera in units of r_S
 #x,z are the disc's plane
-Cameraposition=0.,1.,-10.
+Cameraposition=0.,0.,-10.
 
 #Tangent of field of view
-Fieldofview=1.0
+Fieldofview=2.0
 
 #Self explanatory
 #fixes the view vector
@@ -41,7 +41,7 @@ Lookat=0.,0.,0.
 
 #The vector defining the "up" direction
 #(it's actually projected on the orthogonal subspace to the view vector)
-Upvector=.3,1.,0.
+Upvector=0.,1.,0.
 
 
 [materials]
@@ -67,6 +67,7 @@ Fogmult=0.2
 
 #Bloom threshold. This is actually expressed as a squared norm of the colour (r*r + g*g + b*b)
 #take note that the blackbody mode uses HDR and squared colours > 3.0 are possible
+Blurdo=1
 Bloomcut=0.8
 
 #Gain
