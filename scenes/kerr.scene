@@ -30,14 +30,14 @@ Stepsize=0.02
 [metric]
 
 # angular momentum. J=0 imposes Schwarzschild.
-J=0
+J=1.
 
 
 [geometry]
 
 #Position of the camera in units of r_S
 #x,z are the disc's plane
-Cameraposition=0.,1.,-20.
+Cameraposition=0.,-10.,0.
 
 #Tangent of field of view
 Fieldofview=0.7
@@ -48,7 +48,7 @@ Lookat=0.,0.,0.
 
 #The vector defining the "up" direction
 #(it's actually projected on the orthogonal subspace to the view vector)
-Upvector=.2,1.,0.
+Upvector=0.,0.,1.
 
 
 #Disc inner/outer radii
@@ -59,10 +59,10 @@ Diskouter=10.
 [materials]
 
 #whether to convert sRGB -> linear RGB when loading textures
-sRGBIn=1
+sRGBIn=0
 
 #whether to convert back RGB -> sRGB after postprocessing, before saving
-sRGBOut=1
+sRGBOut=0
 
 
 #Whether to draw a grid on the horizon (0/1)
@@ -74,7 +74,7 @@ Horizongrid=0
 #	grid:		draw blue/white checkered
 #	solid:		draw solid white
 #	blackbody:	use the realistic 'blackbody' model
-Disktexture=texture
+Disktexture=none
 
 #blackbody disc options
 #these options are ignored when Disktexture != blackbody
@@ -89,13 +89,13 @@ Diskalphamultiplier=2000.
 #	none:		solid black
 #	texture:	use texture bgedit.png
 #	final:		normalized final ray direction
-Skytexture=texture
+Skytexture=final
 
 #Ratio of sky brightness / disk brightness
-Skydiskratio=0.07
+Skydiskratio=1.
 
 #Toggle dust (0/1)
-Fogdo=1
+Fogdo=0
 #Dust intensity multiplier
 Fogmult=0.04
 
