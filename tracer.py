@@ -69,7 +69,8 @@ defaults = {
             "Horizongrid":"1",
             "Redshift":"1",
             "sRGBOut":"1",
-            "sRGBIn":"1"
+            "sRGBIn":"1",
+            "J":"0"
             }
 
 cfp = ConfigParser.ConfigParser(defaults)
@@ -104,6 +105,12 @@ if not LOFI:
         STEP = float(cfp.get('hifi','Stepsize'))
     except KeyError,ex:
         print "no data in hifi section. Using lofi/defaults."
+
+
+try:
+    METRIC_J = float(cfp.get('metric','J'))
+except:
+    print "no data in metric section. Using defaults."
 
 try:
     CAMERA_POS = map(lambda x:float(x),cfp.get('geometry','Cameraposition').split(','))
@@ -146,6 +153,16 @@ try:
 except KeyError:
     print "error reading scene file: insufficient data in materials section"
     print "using defaults."
+
+
+ISKERR = (METRIC_J >= 0.001)
+
+if ISKERR:
+    metric_name = "Kerr"
+else:
+    metric_name = "Schwarzschild"
+
+print "Metric is a %s black hole (J = %d)"%(metric_name,METRIC_J)
 
 
 #just ensuring it's an np.array() and not a tuple/list
@@ -292,6 +309,17 @@ def sixth(v):
     return tmp*tmp*tmp
 
 
+def pointSph2Cart(vec):
+    cart = np.zeros((vec.shape[0],3))
+    cth = np.cos(vec[:,1])
+    sth = np.sin(vec[:,1])
+
+    cart[:,0] = vec[:,0] * sth * np.cos(vec[:,2])
+    cart[:,1] = vec[:,0] * sth * np.sin(vec[:,2])
+    cart[:,2] = vec[:,0] * cth
+
+    return cart
+
 # this blends colours ca and cb by placing ca in front of cb
 def blendcolors(cb,balpha,ca,aalpha):
             #* np.outer(aalpha, np.array([1.,1.,1.])) + \
@@ -423,10 +451,50 @@ for chunk in chunks:
     object_colour = np.zeros((numChunk,3))
     object_alpha = np.zeros(numChunk)
 
-    #squared angular momentum per unit mass (in the "Newtonian fantasy")
-    #h2 = np.outer(sqrnorm(np.cross(point,velocity)),np.array([1.,1.,1.]))
-    h2 = sqrnorm(np.cross(point,velocity))[:,np.newaxis]
 
+    #initialization specific to integration methods
+    showprogress("prep init conds...")
+
+    if not ISKERR: # SCHWARZSCHILD
+        
+        #squared angular momentum per unit mass (in the "Newtonian fantasy")
+        h2 = sqrnorm(np.cross(point,velocity))[:,np.newaxis]
+
+    else:           # KERR
+        
+        #for simplicity we invert Boyer-Lindquist as if they were spherical
+        bl_coords = np.zeros((numChunk,3)) #r, theta, phi
+        #r
+        bl_coords[:,0] = norm(CAMERA_POS)[np.newaxis]
+        #theta
+        bl_coords[:,1] = np.arccos(CAMERA_POS[2] / bl_coords[:,0] )
+        #phi
+        bl_coords[:,2] = np.arctan2(CAMERA_POS[0],CAMERA_POS[1])[np.newaxis]
+
+        print "bl coords",bl_coords
+
+
+        # I transform the cartesian velocity to a spherical velocity: d/dlambda of (r,theta,phi)
+
+        bl_velocity = np.zeros((numChunk,3))
+
+        #transformation from Mathematica
+        #{v2 Cos[\[Theta]]+Sin[\[Theta]] (v0 Cos[\[Phi]]+v1 Sin[\[Phi]]),
+        #-v2 Sin[\[Theta]]+Cos[\[Theta]] (v0 Cos[\[Phi]]+v1 Sin[\[Phi]]),
+        #v1 Cos[\[Phi]]-v0 Sin[\[Phi]]}
+        
+        sth = np.sin(bl_coords[:,1])
+        cth = np.cos(bl_coords[:,1])
+
+        v0,v1,v2 = velocity[:,0],velocity[:,1],velocity[:,2]
+
+        parent = v0*cth + v1*sth
+
+        bl_velocity[:,0] =      v2 * cth + sth * parent
+        bl_velocity[:,1] =   -  v2 * sth + cth * parent
+        bl_velocity[:,2] =      v1 * cth - v0 * sth
+
+    
     for it in range(NITER):
         itcounter+=1
 
@@ -436,13 +504,25 @@ for chunk in chunks:
         # STEPPING
         oldpoint = np.copy(point) #not needed for tracing. Useful for intersections
 
-        #leapfrog method here feels good
-        point += velocity * STEP
+        if not ISKERR:
+            #leapfrog method here feels good
+            point += velocity * STEP
 
-        if DISTORT:
-            #this is the magical - 3/2 r^(-5) potential...
-            accel = - 1.5 * h2 *  point / sixth(point)[:,np.newaxis]
-            velocity += accel * STEP
+            if DISTORT:
+                #this is the magical - 3/2 r^(-5) potential...
+                accel = - 1.5 * h2 *  point / sixth(point)[:,np.newaxis]
+                velocity += accel * STEP
+
+        else:
+            #step
+
+            #update point
+            sqrtr2a2 = bl_coords[:,0] #np.sqrt(bl_coords[:,0] * bl_coords[:,0]  + a2 )
+            sintheta = np.sin(bl_coords[:,1])
+
+            point[:,0] = sqrtr2a2 * sintheta * np.cos(bl_coords[:,2])
+            point[:,1] = sqrtr2a2 * sintheta * np.sin(bl_coords[:,2])
+            point[:,2] = bl_coords[:,0] * np.cos(bl_coords[:,0])
 
 
         #useful precalcs
@@ -553,8 +633,13 @@ for chunk in chunks:
             object_alpha = blendalpha(horizonalpha, object_alpha)
 
 
+    if ISKERR:
+        showprogress("inverting back final direction...")
+        #cheap trick
+        velocity = normalize(pointSph2Cart(bl_coords + 0.01*bl_velocity) - pointSph2Cart(bl_coords) )
 
-
+        print "view",normalize(view)
+        print "final",velocity
 
     showprogress("generating sky layer...")
 
@@ -583,7 +668,7 @@ for chunk in chunks:
     elif SKY_TEXTURE == 'none':
         col_bg = np.zeros((numChunk,3))
     elif SKY_TEXTURE == 'final':
-        dbg_finvec = np.clip(normalize(velocity) + vec3(.5,.5,0.0),0.0,1.0)
+        dbg_finvec = np.clip(normalize(velocity) + vec3(.5,.5,.5),0.0,1.0)
         col_bg = dbg_finvec
     else:
         col_bg = np.zeros((numChunk,3))
